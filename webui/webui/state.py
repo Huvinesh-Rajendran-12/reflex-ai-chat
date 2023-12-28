@@ -1,31 +1,22 @@
 import os
 import requests
 import json
-import openai
 import reflex as rx
 
-openai.api_key = os.getenv("OPENAI_API_KEY")
-openai.api_base = os.getenv("OPENAI_API_BASE", "https://api.openai.com/v1")
 
-BAIDU_API_KEY = os.getenv("BAIDU_API_KEY")
-BAIDU_SECRET_KEY = os.getenv("BAIDU_SECRET_KEY")
+AI_CHATBOT_URL = os.getenv("AI_CHATBOT_URL", "http://127.0.0.1:8080/v1/chat/completions")
 
-
-if not openai.api_key and not BAIDU_API_KEY:
-    raise Exception("Please set OPENAI_API_KEY or BAIDU_API_KEY")
-
-
-def get_access_token():
-    """
-    :return: access_token
-    """
-    url = "https://aip.baidubce.com/oauth/2.0/token"
-    params = {
-        "grant_type": "client_credentials",
-        "client_id": BAIDU_API_KEY,
-        "client_secret": BAIDU_SECRET_KEY,
-    }
-    return str(requests.post(url, params=params).json().get("access_token"))
+# def get_access_token():
+#     """
+#     :return: access_token
+#     """
+#     url = "https://aip.baidubce.com/oauth/2.0/token"
+#     params = {
+#         "grant_type": "client_credentials",
+#         "client_id": BAIDU_API_KEY,
+#         "client_secret": BAIDU_SECRET_KEY,
+#     }
+#     return str(requests.post(url, params=params).json().get("access_token"))
 
 
 class QA(rx.Base):
@@ -64,7 +55,7 @@ class State(rx.State):
     # Whether the modal is open.
     modal_open: bool = False
 
-    api_type: str = "baidu" if BAIDU_API_KEY else "openai"
+    api_type: str = "openai"
 
     def create_chat(self):
         """Create a new chat."""
@@ -118,14 +109,12 @@ class State(rx.State):
             return
 
         if self.api_type == "openai":
-            model = self.openai_process_question
-        else:
-            model = self.baidu_process_question
+            model = self.llm_process_question
 
         async for value in model(question):
             yield value
 
-    async def openai_process_question(self, question: str):
+    async def llm_process_question(self, question: str):
         """Get the response from the API.
 
         Args:
@@ -152,59 +141,29 @@ class State(rx.State):
         messages = messages[:-1]
 
         # Start a new session to answer the question.
-        session = openai.ChatCompletion.create(
-            model=os.getenv("OPENAI_MODEL", "gpt-3.5-turbo"),
-            messages=messages,
+        response = requests.post(
+            url=AI_CHATBOT_URL,
+            headers={"Content-Type": "application/json"},
             stream=True,
+            data=json.dumps({
+                "model": "Phi2",
+                "messages": messages,
+                "response_format": {
+                    "type": "json_object"
+                },
+                "stream": True
+            }),
         )
 
         # Stream the results, yielding after every word.
-        for item in session:
-            if hasattr(item.choices[0].delta, "content"):
-                answer_text = item.choices[0].delta.content
-                self.chats[self.current_chat][-1].answer += answer_text
-                self.chats = self.chats
-                yield
-
-        # Toggle the processing flag.
-        self.processing = False
-
-    async def baidu_process_question(self, question: str):
-        """Get the response from the API.
-
-        Args:
-            form_data: A dict with the current question.
-        """
-        # Add the question to the list of questions.
-        qa = QA(question=question, answer="")
-        self.chats[self.current_chat].append(qa)
-
-        # Clear the input and start the processing.
-        self.processing = True
-        yield
-
-        # Build the messages.
-        messages = []
-        for qa in self.chats[self.current_chat]:
-            messages.append({"role": "user", "content": qa.question})
-            messages.append({"role": "assistant", "content": qa.answer})
-
-        # Remove the last mock answer.
-        messages = json.dumps({"messages": messages[:-1]})
-        # Start a new session to answer the question.
-        session = requests.request(
-            "POST",
-            "https://aip.baidubce.com/rpc/2.0/ai_custom/v1/wenxinworkshop/chat/completions_pro?access_token="
-            + get_access_token(),
-            headers={"Content-Type": "application/json"},
-            data=messages,
-        )
-
-        json_data = json.loads(session.text)
-        if "result" in json_data.keys():
-            answer_text = json_data["result"]
-            self.chats[self.current_chat][-1].answer += answer_text
-            self.chats = self.chats
-            yield
+        for item in response.iter_content(chunk_size=2000, decode_unicode=True):
+            if item.strip()[6:] != "[DONE]":
+                json_response = json.loads(s=item[6:])
+                if 'content' in json_response['choices'][0]['delta']:
+                    answer_text = json_response['choices'][0]['delta']['content']
+                    print(answer_text)
+                    self.chats[self.current_chat][-1].answer += answer_text
+                    self.chats = self.chats
+                    yield
         # Toggle the processing flag.
         self.processing = False
