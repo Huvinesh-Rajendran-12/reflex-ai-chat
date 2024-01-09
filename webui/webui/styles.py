@@ -6,10 +6,10 @@ bg_medium_color = "#222"
 border_color = "#fff3"
 
 accennt_light = "#6649D8"
-accent_color = "#5535d4"
-accent_dark = "#4c2db3"
+accent_color = "#7FFFD4"
+accent_dark = "#008080"
 
-icon_color = "#fff8"
+icon_color = "#55e0b7"
 
 text_light_color = "#fff"
 shadow_light = "rgba(17, 12, 46, 0.15) 0px 48px 100px 0px;"

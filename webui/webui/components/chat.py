@@ -2,10 +2,12 @@ import reflex as rx
 
 from webui import styles
 from webui.components import loading_icon
-from webui.state import QA, State
+from webui.models import Conversation
+from webui.state import LLM, State, ChatState
 
 
-def message(qa: QA) -> rx.Component:
+
+def message(conversation: Conversation):
     """A single question/answer message.
 
     Args:
@@ -17,7 +19,7 @@ def message(qa: QA) -> rx.Component:
     return rx.box(
         rx.box(
             rx.text(
-                qa.question,
+                conversation.user_prompt,
                 bg=styles.border_color,
                 shadow=styles.shadow_light,
                 **styles.message_style,
@@ -26,11 +28,22 @@ def message(qa: QA) -> rx.Component:
             margin_top="1em",
         ),
         rx.box(
-            rx.text(
-                qa.answer,
-                bg=styles.accent_color,
-                shadow=styles.shadow_light,
-                **styles.message_style,
+            rx.vstack(
+                rx.text(
+                    conversation.llm_response,
+                    bg=styles.accent_color,
+                    shadow=styles.shadow_light,
+                    **styles.message_style,
+                ),
+                rx.button(
+                    rx.icon(
+                        tag="warning"
+                    ),
+                    "Provide Feedback",
+                    on_click=State.toggle_feedback_modal
+                ),
+                align_items="left",
+                width="50%"
             ),
             text_align="left",
             padding_top="1em",
@@ -38,11 +51,10 @@ def message(qa: QA) -> rx.Component:
         width="100%",
     )
 
-
 def chat() -> rx.Component:
     """List all the messages in a single conversation."""
     return rx.vstack(
-        rx.box(rx.foreach(State.chats[State.current_chat], message)),
+        rx.box(rx.foreach(ChatState.get_conversations, message)),
         py="8",
         flex="1",
         width="100%",
@@ -63,7 +75,7 @@ def action_bar() -> rx.Component:
                     rx.hstack(
                         rx.input(
                             placeholder="Type something...",
-                            id="question",
+                            id="user_prompt",
                             _placeholder={"color": "#fffa"},
                             _hover={"border_color": styles.accent_color},
                             style=styles.input_style,
@@ -81,12 +93,12 @@ def action_bar() -> rx.Component:
                     ),
                     is_disabled=State.processing,
                 ),
-                on_submit=State.process_question,
+                on_submit=LLM.process_question,
                 reset_on_submit=True,
                 width="100%",
             ),
             rx.text(
-                "ReflexGPT may return factually incorrect or misleading responses. Use discretion.",
+                "TelemeAI may return factually incorrect or misleading responses. Use discretion.",
                 font_size="xs",
                 color="#fff6",
                 text_align="center",
