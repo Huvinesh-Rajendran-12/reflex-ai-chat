@@ -1,11 +1,12 @@
 import os
 import time
 from typing import List, Optional, Sequence
-from uuid import uuid4, uuid5
+from uuid import uuid4 
 import requests
 import json
 import reflex as rx
 from webui.models import Admin, Chat, Conversation, UserFeedback
+from qdrant import Qdrant
 
 AI_CHATBOT_URL = os.getenv("AI_CHATBOT_URL", "http://127.0.0.1:8080/v1/chat/completions")
 
@@ -16,24 +17,11 @@ class State(rx.State):
     processing: bool = False
 
     user_feedback_modal_open: bool = False
-
-    ratings: int = 0 
-
-    user_feedback: str = ""
-
-    api_type: str = "openai"
     
-    def toggle_modal(self):
-        """Toggle the new chat modal."""
-        self.modal_open = not self.modal_open
-
     def toggle_feedback_modal(self):
         """Togggle the user feedback modal."""
         self.user_feedback_modal_open = not self.user_feedback_modal_open
 
-    def toggle_drawer(self):
-        """Toggle the drawer."""
-        self.drawer_open = not self.drawer_open
 
     def update_user_feedback(self) -> None:
         """
@@ -75,9 +63,18 @@ class LLM(rx.State):
 
             # Build the messages.
             messages = [
-                {"role": "system", "content": "You are a friendly chatbot named Teleme AI"}
+                {"role": "system", "content": "You are a friendly health assistant named Teleme AI."}
             ]
+
+            context = Qdrant().query(question=question)
            
+            full_prompt = f"""
+                    User's question: {question}.
+                    Below is the context, delimited by three dashes (-), use that to answer the user's question.
+                    ---
+                    {context}
+                    ---
+            """
             conversations = session.exec(Conversation.select.where(
                 Conversation.session_id == self.router.session.session_id
             )).all()
@@ -87,7 +84,7 @@ class LLM(rx.State):
 
             # Remove the last mock answer.
             messages = messages[:-1]
-
+            messages.append({"role": "user", "content": full_prompt})
             start_time = time.time()
             # Start a new session to answer the question.
             response = requests.post(
